@@ -6,7 +6,7 @@ class Word2Vec:
         self.embed_dim = embed_dim
         self.lr = lr
         
-        # CORRECCIÓN: W1 se inicializa uniforme pequeño, W2 EN CEROS.
+        # W1 se inicializa uniforme pequeño, W2 EN CEROS.
         # Esto es clave para que el Skip-Gram arranque correctamente.
         self.W1 = np.random.uniform(-0.5/embed_dim, 0.5/embed_dim, (vocab_size, embed_dim))
         self.W2 = np.zeros((vocab_size, embed_dim))
@@ -27,16 +27,16 @@ class Word2Vec:
         neg_scores = np.einsum('be,bne->bn', v_w, v_n)
         neg_probs = self._sigmoid(neg_scores)
 
-        # Loss
+        # Loss (Suma de la pérdida de todo el batch, no la media)
         eps = 1e-10
-        loss = -np.mean(np.log(pos_probs + eps) + np.sum(np.log(1 - neg_probs + eps), axis=1))
+        # Cambiamos np.mean por np.sum para ser consistentes con la eliminación de la división en el gradiente
+        loss = -np.sum(np.log(pos_probs + eps) + np.sum(np.log(1 - neg_probs + eps), axis=1))
 
-        # --- BACKPROPAGATION CORREGIDA PARA BATCHES ---
-        batch_size = centers.shape[0]
+        # --- BACKPROPAGATION CORREGIDA (Sin dividir por batch_size) ---
         
-        # ALERTA: Dividimos por batch_size para que el gradiente sea el promedio (igual que el np.mean del loss)
-        grad_pos = ((pos_probs - 1) / batch_size).reshape(-1, 1) 
-        grad_neg = (neg_probs / batch_size) 
+        # Gradientes basados en la suma de los errores (Mikolov original)
+        grad_pos = (pos_probs - 1).reshape(-1, 1) 
+        grad_neg = neg_probs 
 
         # 1. Gradiente para W2 (Contextos positivos)
         grad_W2_pos = grad_pos * v_w

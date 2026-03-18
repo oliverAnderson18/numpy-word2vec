@@ -19,7 +19,7 @@ def load_text(file_path=DATA_PATH):
     
     return text.split()
 
-def build_vocab(words, min_freq=5):
+def build_vocab(words, min_freq=20):
     """
     Builds vocabulary by filtering rare words.
     Returns mapping dictionaries and word frequencies.
@@ -28,7 +28,7 @@ def build_vocab(words, min_freq=5):
     word_counts = Counter(words)
     
     vocab = [word for word, count in word_counts.items() if count >= min_freq]
-    vocab = ["<UNK>"] + vocab
+    vocab = ["<UNK>"] + vocab  # If the filtered out word appears, we give it UNK.
     
     word2idx = {word: i for i, word in enumerate(vocab)}
     idx2word = {i: word for i, word in enumerate(vocab)}
@@ -41,26 +41,29 @@ def build_vocab(words, min_freq=5):
 
 def subsample_text(words, word2idx, word_freqs, threshold=1e-3):
     """
-    Applies subsampling to frequent words based on Mikolov's formula.
+    Applies subsampling to frequent words based on Mikolov's subsampling formula.
     Returns the text converted to numerical indices.
     """
     subsampled = []
-    
+
     for word in words:
         idx = word2idx.get(word, word2idx['<UNK>'])
-        freq = word_freqs.get(word, 0)
+        freq = word_freqs.get(word, threshold)
+
         if freq > threshold:
-            p_keep = (np.sqrt(threshold / freq) + (threshold / freq))
+            p_keep = np.sqrt(threshold / freq) + (threshold / freq)
+            p_keep = min(1.0, p_keep)
         else:
             p_keep = 1.0
-    
+
         if random.random() < p_keep:
             subsampled.append(idx)
-    
+
     return subsampled
 
 def create_unigram_table(word_freqs, word2idx, table_size=1e7):
     """Creates a table for negative sampling using freq^(3/4)."""
+    
     sorted_vocab = sorted(word2idx.items(), key=lambda x: x[1])
 
     counts = np.array([word_freqs.get(word, 1e-6) for word, idx in sorted_vocab])
@@ -70,42 +73,37 @@ def create_unigram_table(word_freqs, word2idx, table_size=1e7):
     
     return np.random.choice(len(word2idx), size=int(table_size), p=probs)
             
-        
-def get_target(words, idx, window_size=5):
-    """
-    Retrieves context words for a given center word.
-    Uses dynamic window sizing.
-    """
-    R = np.random.randint(1, window_size + 1) # dynamic sizing
-    
-    start = max(0, idx - R)
-    end = min(len(words), idx + R + 1)
-    
-    targets = words[start:idx] + words[idx+1:end]
-    
-    return targets
 
-def get_batches(words, batch_size, window_size=5):
+def get_batches(words, batch_size, window_size=5, buffer_size=500000):
     """
-    CORRECCIÓN: Ahora acumula pares hasta alcanzar exactamente el batch_size.
-    Esto hace que los tensores sean uniformes y el entrenamiento más estable.
+    Generates pairs for a batch, shuffles them, and yields them.
+    This prevents freezing the RAM and allows training to start quickly.
     """
-    x, y = [], []
-    for idx in range(len(words)):
-        R = np.random.randint(1, window_size + 1)
-        start = max(0, idx - R)
-        end = min(len(words), idx + R + 1)
+    for i in range(0, len(words), buffer_size):
+        buffer_words = words[i : i + buffer_size + window_size] # A bit of overlap to not loose context
+        pairs = []
         
-        center = words[idx]
-        contexts = words[start:idx] + words[idx+1:end]
-        
-        x.extend([center] * len(contexts))
-        y.extend(contexts)
-        
-        if len(x) >= batch_size:
-            yield np.array(x[:batch_size]), np.array(y[:batch_size])
-            x, y = x[batch_size:], y[batch_size:]
+        for idx in range(len(buffer_words)):
+            # Dynamic windows
+            R = np.random.randint(1, window_size + 1)
+            start = max(0, idx - R)
+            end = min(len(buffer_words), idx + R + 1)
             
-    if len(x) > 0:
-        yield np.array(x), np.array(y)
-    
+            center = buffer_words[idx]
+            # Extract the context ignoring the center
+            contexts = [buffer_words[j] for j in range(start, end) if j != idx]
+            
+            for context in contexts:
+                pairs.append((center, context))
+        
+        # Shuffle ONLY pairs of this buffer
+        random.shuffle(pairs)
+        
+        for j in range(0, len(pairs), batch_size):
+            batch = pairs[j : j + batch_size]
+            if len(batch) < batch_size:
+                continue
+            
+            x_batch = np.array([p[0] for p in batch])
+            y_batch = np.array([p[1] for p in batch])
+            yield x_batch, y_batch
