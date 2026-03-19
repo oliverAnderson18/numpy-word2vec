@@ -2,7 +2,7 @@ import numpy as np
 from utils.preprocessing import load_text, build_vocab
 
 def get_similar_words(word_vec, W1, idx2word, top_k=5, exclude_words=None):
-    """Finds the closests words to the given words."""
+    """Finds the closest words to the given word vector."""
     norms = np.linalg.norm(W1, axis=1)
     norms[norms == 0] = 1e-10 
     
@@ -31,24 +31,34 @@ if __name__ == "__main__":
     try:
         W1 = np.load('W1.npy')
         
-        palabras_objetivo = ["king", "football", "apple", "car", "foot"]
-        
-        print("\n=== Searching for the 5 closest words ===")
-        for palabra in palabras_objetivo:
-            # We must verify that the word exists
-            if palabra not in word2idx:
-                print(f"\n[!] The word '{palabra}' is not in the vocab")
+        print("\n" + "="*45)
+        print("   Word Similarity Search Tool")
+        print("   (Enter '0' to exit the program)")
+        print("="*45)
+
+        while True:
+            # Get user input
+            target_word = input("\nEnter a word: ").strip().lower()
+
+            # Exit condition
+            if target_word == '0':
+                print("Exiting... Goodbye!")
+                break
+
+            # Check if the word exists in the vocabulary
+            if target_word not in word2idx:
+                print(f"[!] The word '{target_word}' was not found in the vocabulary.")
                 continue
             
-            # Obtain the embedding of the word
-            vec_palabra = W1[word2idx[palabra]]
+            # Obtain the word embedding 
+            word_vector = W1[word2idx[target_word]]
             
-            # Find the closest words (we must exclude itself)
-            similares = get_similar_words(vec_palabra, W1, idx2word, top_k=5, exclude_words=[palabra])
+            # Find the closest words
+            similar_results = get_similar_words(word_vector, W1, idx2word, top_k=5, exclude_words=[target_word])
             
-            print(f"\nClosest words to '{palabra}':")
-            for sim_word, score in similares:
-                print(f"  * {sim_word} (Similarity: {score:.4f})")
+            print(f"\nTop matches for '{target_word}':")
+            for word, score in similar_results:
+                print(f"  * {word:<15} (Similarity: {score:.4f})")
                 
     except FileNotFoundError:
-        print("Error: 'W1.npy' not found. Execute train.py first.")
+        print("Error: 'W1.npy' not found. Please run train.py first to generate the weights.")
