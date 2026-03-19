@@ -6,13 +6,22 @@ class Word2Vec:
         self.embed_dim = embed_dim
         self.lr = lr
         
-        # W1 se inicializa uniforme pequeño, W2 EN CEROS.
-        # Esto es clave para que el Skip-Gram arranque correctamente.
+        """
+        W1: Input/Center word embeddings. Initialized with small random values to 
+        ensure numerical stability (avoiding sigmoid saturation/vanishing gradients) 
+        and to break symmetry. If all vectors started equal, they would all 
+        receive the same gradient updates and never learn distinct meanings.
+
+        W2: Output/Context word embeddings. Initialized to zero so that the initial 
+        dot product is 0, making the sigmoid return 0.5. This represents 
+        maximum uncertainty (neutrality) and, crucially, provides the maximum 
+        possible gradient to start the learning process.
+        """
         self.W1 = np.random.uniform(-0.5/embed_dim, 0.5/embed_dim, (vocab_size, embed_dim))
         self.W2 = np.zeros((vocab_size, embed_dim))
 
     def _sigmoid(self, x):
-        # Clip en -6, 6 (como en el paper de Mikolov) es suficiente
+        # Clipping to [-6, 6] ensures numerical stability and prevents np.exp from returning Inf or NaN.
         return 1 / (1 + np.exp(-np.clip(x, -6, 6)))
 
     def train_step(self, centers, contexts, negatives):
@@ -21,32 +30,35 @@ class Word2Vec:
         v_n = self.W2[negatives]    
 
         # Forward
-        pos_scores = np.sum(v_w * v_c, axis=1) 
+        pos_scores = np.einsum('ij,ij->i', v_w, v_c)
         pos_probs = self._sigmoid(pos_scores)
         
         neg_scores = np.einsum('be,bne->bn', v_w, v_n)
         neg_probs = self._sigmoid(neg_scores)
 
-        # Loss (Suma de la pérdida de todo el batch, no la media)
+        # Loss
         eps = 1e-10
-        # Cambiamos np.mean por np.sum para ser consistentes con la eliminación de la división en el gradiente
         loss = -np.sum(np.log(pos_probs + eps) + np.sum(np.log(1 - neg_probs + eps), axis=1))
-
-        # --- BACKPROPAGATION CORREGIDA (Sin dividir por batch_size) ---
         
-        # Gradientes basados en la suma de los errores (Mikolov original)
+        # Backpropagation
         grad_pos = (pos_probs - 1).reshape(-1, 1) 
         grad_neg = neg_probs 
+        
+        """ 
+        np.add.at ensures that if the same index appears multiple times in a batch 
+        (frequent words), all its corresponding gradients are correctly 
+        summed rather than overwritten.
+        """
 
-        # 1. Gradiente para W2 (Contextos positivos)
+        # Gradient for W2 positive contexts
         grad_W2_pos = grad_pos * v_w
         np.add.at(self.W2, contexts, -self.lr * grad_W2_pos)
         
-        # 2. Gradiente para W2 (Negativos)
+        # Gradient for W2 negative contexts
         grad_W2_neg = grad_neg[:, :, np.newaxis] * v_w[:, np.newaxis, :]
         np.add.at(self.W2, negatives, -self.lr * grad_W2_neg)
 
-        # 3. Gradiente para W1 (Centro)
+        # Gradient for W1
         grad_W1 = (grad_pos * v_c) + np.einsum('bn,bne->be', grad_neg, v_n)
         np.add.at(self.W1, centers, -self.lr * grad_W1)
 

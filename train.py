@@ -17,18 +17,16 @@ def train():
     unigram_table = create_unigram_table(word_freqs, word2idx)
 
     # Hyperparameters
-   # Hyperparameters sugeridos tras los cambios
     VOCAB_SIZE = len(word2idx)
     EMBEDDING_DIM = 100
-    INITIAL_LR = 0.05  # <--- BAJADO de 1.0 a 0.05
+    INITIAL_LR = 0.05  
     EPOCHS = 5
     BATCH_SIZE = 512
     NEG_SAMPLES = 5
-    WINDOW_SIZE = 5    # Una ventana de 5 suele dar mejores resultados que 3
+    WINDOW_SIZE = 5  
 
     model = Word2Vec(VOCAB_SIZE, EMBEDDING_DIM, INITIAL_LR)
     
-    # Estimación de pares generados (cada palabra genera ~WINDOW_SIZE contextos)
     estimated_pairs = len(int_words) * WINDOW_SIZE
     total_steps = (estimated_pairs // BATCH_SIZE) * EPOCHS
     current_step = 0
@@ -38,9 +36,6 @@ def train():
     for epoch in range(EPOCHS):
         total_loss = 0
         
-        # ELIMINADO: shuffle(int_words) <- Esto destruía el contexto natural de las palabras
-        
-        # Al no tener una longitud fija de batches exacta, usamos tqdm genérico
         pbar = tqdm(enumerate(get_batches(int_words, BATCH_SIZE, window_size=WINDOW_SIZE)))
         
         for i, (x_batch, y_batch) in pbar:
